@@ -1,0 +1,84 @@
+import { createContext, useState, useEffect, useCallback } from "react";
+import api from "../api/client";
+
+export const AuthContext = createContext();
+
+export function AuthProvider({ children }) {
+  const [user, setUser] = useState(null);
+  const [token, setToken] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const savedToken = localStorage.getItem("adminToken");
+    const savedUser = localStorage.getItem("adminUser");
+    if (savedToken && savedUser) {
+      try {
+        const parsed = JSON.parse(savedUser);
+        setToken(savedToken);
+        setUser(parsed);
+      } catch {
+        localStorage.removeItem("adminToken");
+        localStorage.removeItem("adminUser");
+      }
+    }
+    setLoading(false);
+  }, []);
+
+  const login = useCallback(async (email, password) => {
+    try {
+      const { data } = await api.post("/api/auth/login", { email, password });
+
+      setToken(data.token);
+      setUser(data.user);
+      localStorage.setItem("adminToken", data.token);
+      localStorage.setItem("adminUser", JSON.stringify(data.user));
+      return { success: true };
+    } catch (e) {
+      if (e?.response) return { success: false, error: e.response.data?.error || "লগইন ব্যর্থ" };
+      return { success: false, error: "সার্ভারে সংযোগ ব্যর্থ" };
+    }
+  }, []);
+
+  const logout = useCallback(() => {
+    setUser(null);
+    setToken(null);
+    localStorage.removeItem("adminToken");
+    localStorage.removeItem("adminUser");
+  }, []);
+
+  const updateUser = useCallback((updates) => {
+    setUser((prev) => {
+      const next = { ...(prev || {}), ...updates };
+      localStorage.setItem("adminUser", JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
+  const hasPermission = useCallback(
+    (perm) => {
+      if (!user) return false;
+      if (user.role === "admin") return true;
+      return Array.isArray(user.permissions) && user.permissions.includes(perm);
+    },
+    [user]
+  );
+
+  const isSuperAdmin = user?.role === "admin";
+
+  return (
+    <AuthContext.Provider
+      value={{
+        user,
+        token,
+        loading,
+        login,
+        logout,
+        updateUser,
+        hasPermission,
+        isSuperAdmin,
+      }}
+    >
+      {children}
+    </AuthContext.Provider>
+  );
+}
